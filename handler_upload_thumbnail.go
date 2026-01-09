@@ -33,16 +33,29 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	// TODO: implement the upload here
 
 	const maxMemory = 10 << 20
+	const maxUploadBytes = 10 << 20
 
-	r.ParseMultipartForm(maxMemory)
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 
-	thumbnailData, _, err := r.FormFile("thumbnail")
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error upploading thumbnail", err)
+	if err := r.ParseMultipartForm(maxMemory); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Invalid multipart form", err)
 		return
 	}
 
-	thumbnailFile, err := io.ReadAll(thumbnailData)
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
+
+	thumbnailData, _, err := r.FormFile("thumbnail")
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Error upploading thumbnail", err)
+		return
+	}
+	defer thumbnailData.Close()
+
+	thumbnailFile, err := io.ReadAll(io.LimitReader(thumbnailData, maxMemory))
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error working with thumbnail", err)
 		return
@@ -55,7 +68,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 
 	if userID != videoMetaData.UserID {
-		respondWithError(w, http.StatusUnauthorized, "Denied", err)
+		respondWithError(w, http.StatusForbidden, "Denied", err)
 		return
 	}
 
@@ -69,6 +82,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	thumbURL := fmt.Sprintf("/api/thumbnails/%s", videoID)
 	videoMetaData.ThumbnailURL = &thumbURL
 	err = cfg.db.UpdateVideo(videoMetaData)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error updating DB", err)
+		return
+	}
+
 	if userID != videoMetaData.UserID {
 		respondWithError(w, http.StatusInternalServerError, "Unable to update thumbnail in DB", err)
 		return
