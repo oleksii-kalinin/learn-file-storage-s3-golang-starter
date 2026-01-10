@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
+	"github.com/oleksii-kalinin/learn-file-storage-s3-golang-starter/internal/database"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -22,11 +22,6 @@ type apiConfig struct {
 	s3CfDistribution string
 	port             string
 	baseURL          string
-}
-
-type thumbnail struct {
-	data      []byte
-	mediaType string
 }
 
 // var videoThumbnails = map[uuid.UUID]thumbnail{}
