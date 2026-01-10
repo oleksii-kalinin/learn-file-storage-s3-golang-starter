@@ -21,6 +21,7 @@ type apiConfig struct {
 	s3Region         string
 	s3CfDistribution string
 	port             string
+	baseURL          string
 }
 
 type thumbnail struct {
@@ -83,6 +84,11 @@ func main() {
 		log.Fatal("PORT environment variable is not set")
 	}
 
+	baseURL := os.Getenv("BASE_URL")
+	if baseURL == "" {
+		log.Fatal("BASE_URL environment variable is not set")
+	}
+
 	cfg := apiConfig{
 		db:               db,
 		jwtSecret:        jwtSecret,
@@ -93,6 +99,7 @@ func main() {
 		s3Region:         s3Region,
 		s3CfDistribution: s3CfDistribution,
 		port:             port,
+		baseURL:          baseURL,
 	}
 
 	err = cfg.ensureAssetsDir()
