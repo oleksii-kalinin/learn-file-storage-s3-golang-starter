@@ -41,7 +41,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 
 	if err := r.ParseMultipartForm(maxMemory); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Invalid multipart form", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid multipart form", err)
 		return
 	}
 
@@ -92,13 +92,13 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusInternalServerError, "Error creating thumbnail file", err)
 		return
 	}
+	defer thumbnail.Close()
 
 	_, err = io.Copy(thumbnail, thumbnailData)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error copying thumbnail file", err)
 		return
 	}
-	defer thumbnail.Close()
 
 	videoMetaData.ThumbnailURL = &thumbnailURL
 	err = cfg.db.UpdateVideo(videoMetaData)
