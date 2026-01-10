@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -34,6 +37,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	const maxMemory = 10 << 20
 	const maxUploadBytes = 10 << 20
+	// const assetsPath = "/assets/"
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 
@@ -48,18 +52,12 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		}
 	}()
 
-	thumbnailData, _, err := r.FormFile("thumbnail")
+	thumbnailData, fh, err := r.FormFile("thumbnail")
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Error upploading thumbnail", err)
+		respondWithError(w, http.StatusBadRequest, "Error uploading thumbnail", err)
 		return
 	}
 	defer thumbnailData.Close()
-
-	thumbnailFile, err := io.ReadAll(io.LimitReader(thumbnailData, maxMemory))
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error working with thumbnail", err)
-		return
-	}
 
 	videoMetaData, err := cfg.db.GetVideo(videoID)
 	if err != nil {
@@ -72,24 +70,24 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	thumb := thumbnail{
-		data:      thumbnailFile,
-		mediaType: r.Header.Get("Content-Type"),
-	}
+	thumbMediaType := fh.Header.Get("Content-Type")
 
-	videoThumbnails[videoID] = thumb
+	ext := strings.Split(thumbMediaType, "/")[1]
+	thumbFilePath := filepath.Join(cfg.assetsRoot, fmt.Sprintf("%s.%s", videoIDString, ext))
 
-	thumbURL := fmt.Sprintf("/api/thumbnails/%s", videoID)
-	videoMetaData.ThumbnailURL = &thumbURL
+	thumbnailURL := fmt.Sprintf("http://localhost:%s/assets/%s.%s", cfg.port, videoIDString, ext)
+
+	thumbnail, err := os.Create(thumbFilePath)
+
+	io.Copy(thumbnail, thumbnailData)
+	defer thumbnail.Close()
+
+	videoMetaData.ThumbnailURL = &thumbnailURL
 	err = cfg.db.UpdateVideo(videoMetaData)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error updating DB", err)
 		return
 	}
 
-	if userID != videoMetaData.UserID {
-		respondWithError(w, http.StatusInternalServerError, "Unable to update thumbnail in DB", err)
-		return
-	}
 	respondWithJSON(w, http.StatusOK, videoMetaData)
 }
