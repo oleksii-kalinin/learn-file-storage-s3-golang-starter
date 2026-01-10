@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
-	"github.com/google/uuid"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -22,6 +21,7 @@ type apiConfig struct {
 	s3Region         string
 	s3CfDistribution string
 	port             string
+	baseURL          string
 }
 
 type thumbnail struct {
@@ -29,7 +29,7 @@ type thumbnail struct {
 	mediaType string
 }
 
-var videoThumbnails = map[uuid.UUID]thumbnail{}
+// var videoThumbnails = map[uuid.UUID]thumbnail{}
 
 func main() {
 	godotenv.Load(".env")
@@ -84,6 +84,11 @@ func main() {
 		log.Fatal("PORT environment variable is not set")
 	}
 
+	baseURL := os.Getenv("BASE_URL")
+	if baseURL == "" {
+		log.Fatal("BASE_URL environment variable is not set")
+	}
+
 	cfg := apiConfig{
 		db:               db,
 		jwtSecret:        jwtSecret,
@@ -94,6 +99,7 @@ func main() {
 		s3Region:         s3Region,
 		s3CfDistribution: s3CfDistribution,
 		port:             port,
+		baseURL:          baseURL,
 	}
 
 	err = cfg.ensureAssetsDir()
@@ -119,7 +125,6 @@ func main() {
 	mux.HandleFunc("POST /api/video_upload/{videoID}", cfg.handlerUploadVideo)
 	mux.HandleFunc("GET /api/videos", cfg.handlerVideosRetrieve)
 	mux.HandleFunc("GET /api/videos/{videoID}", cfg.handlerVideoGet)
-	mux.HandleFunc("GET /api/thumbnails/{videoID}", cfg.handlerThumbnailGet)
 	mux.HandleFunc("DELETE /api/videos/{videoID}", cfg.handlerVideoMetaDelete)
 
 	mux.HandleFunc("POST /admin/reset", cfg.handlerReset)

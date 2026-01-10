@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -27,11 +30,82 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusUnauthorized, "Couldn't validate JWT", err)
 		return
 	}
-
-
 	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
 	// TODO: implement the upload here
 
-	respondWithJSON(w, http.StatusOK, struct{}{})
+	const maxMemory = 10 << 20
+	const maxUploadBytes = 10 << 20
+	// const assetsPath = "/assets/"
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+
+	if err := r.ParseMultipartForm(maxMemory); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid multipart form", err)
+		return
+	}
+
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
+
+	thumbnailData, fh, err := r.FormFile("thumbnail")
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Error uploading thumbnail", err)
+		return
+	}
+	defer thumbnailData.Close()
+
+	videoMetaData, err := cfg.db.GetVideo(videoID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error getting video", nil)
+		return
+	}
+
+	if userID != videoMetaData.UserID {
+		respondWithError(w, http.StatusForbidden, "Denied", err)
+		return
+	}
+
+	thumbMediaType := fh.Header.Get("Content-Type")
+	// Validate and extract extension
+	var ext string
+	switch thumbMediaType {
+	case "image/jpeg":
+		ext = "jpeg"
+	case "image/jpg":
+		ext = "jpg"
+	case "image/png":
+		ext = "png"
+	default:
+		respondWithError(w, http.StatusBadRequest, "Invalid Content-Type. Allowed: image/jpeg, image/png", nil)
+		return
+	}
+	thumbFilePath := filepath.Join(cfg.assetsRoot, fmt.Sprintf("%s.%s", videoIDString, ext))
+
+	thumbnailURL := fmt.Sprintf("http://%s:%s/assets/%s.%s", cfg.baseURL, cfg.port, videoIDString, ext)
+
+	thumbnail, err := os.Create(thumbFilePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error creating thumbnail file", err)
+		return
+	}
+	defer thumbnail.Close()
+
+	_, err = io.Copy(thumbnail, thumbnailData)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error copying thumbnail file", err)
+		return
+	}
+
+	videoMetaData.ThumbnailURL = &thumbnailURL
+	err = cfg.db.UpdateVideo(videoMetaData)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error updating DB", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, videoMetaData)
 }
