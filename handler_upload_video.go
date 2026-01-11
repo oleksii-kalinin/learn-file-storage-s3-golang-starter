@@ -1,12 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
+	"math"
 	"net/http"
+	"os"
+	"os/exec"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -14,6 +21,18 @@ import (
 	"github.com/google/uuid"
 	"github.com/oleksii-kalinin/learn-file-storage-s3-golang-starter/internal/auth"
 )
+
+type Stream struct {
+	Index       int    `json:"index"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	CodecType   string `json:"codec_type"`
+	AspectRatio string `json:"display_aspect_ratio"`
+}
+
+type FFprobe struct {
+	Streams []Stream `json:"streams"`
+}
 
 func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request) {
 	const uploadLimit = 1 << 30
@@ -59,6 +78,37 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 	defer videoData.Close()
 
+	tempVideo, err := os.CreateTemp("", "tubely-upload.mp4")
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "error temping the video", err)
+		return
+	}
+	defer os.Remove(tempVideo.Name())
+	defer tempVideo.Close()
+
+	_, err = io.Copy(tempVideo, videoData)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "", err)
+	}
+	_, _ = tempVideo.Seek(0, io.SeekStart)
+
+	ar, err := getVideoAspectRatio(tempVideo.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "", err)
+	}
+
+	var aspect string
+	switch ar {
+	case "16:9":
+		aspect = "landscape"
+	case "9:16":
+		aspect = "portrait"
+	default:
+		aspect = "other"
+	}
+
+	log.Printf("Video: %s, ratio: %s", videoID, aspect)
+
 	videoMetaData, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error getting video", err)
@@ -91,14 +141,14 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	videoFileName := fmt.Sprintf("%s.%s", base64.RawURLEncoding.EncodeToString(videoRandomBase), ext)
+	videoFileName := fmt.Sprintf("%s/%s.%s", aspect, base64.RawURLEncoding.EncodeToString(videoRandomBase), ext)
 
 	uploadCtx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 	_, err = cfg.s3Client.PutObject(uploadCtx, &s3.PutObjectInput{
 		Bucket:             &cfg.s3Bucket,
 		Key:                &videoFileName,
-		Body:               videoData,
+		Body:               tempVideo,
 		ContentType:        &videoMediaType,
 		ContentLength:      &fh.Size,
 		ContentDisposition: aws.String("inline"),
@@ -120,4 +170,42 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	respondWithJSON(w, http.StatusOK, videoMetaData)
+}
+
+func getVideoAspectRatio(filePath string) (string, error) {
+	buf := &bytes.Buffer{}
+	var err error
+
+	cmd := exec.Command("ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filePath)
+	cmd.Stdout = buf
+	err = cmd.Run()
+	if err != nil {
+		return "", err
+	}
+
+	var ff FFprobe
+	err = json.Unmarshal(buf.Bytes(), &ff)
+	if err != nil {
+		return "", err
+	}
+
+	var w, h int
+	for _, s := range ff.Streams {
+		if s.CodecType == "video" {
+			w, h = s.Width, s.Height
+			break
+		}
+	}
+	if w == 0 || h == 0 {
+		return "", errors.New("no video stream found")
+	}
+	ratio := float64(w) / float64(h)
+
+	if math.Abs(ratio-16.0/9.0) < 0.01 {
+		return "16:9", nil
+	}
+	if math.Abs(ratio-9.0/16.0) < 0.01 {
+		return "9:16", nil
+	}
+	return "other", nil
 }
