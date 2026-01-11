@@ -88,13 +88,15 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	_, err = io.Copy(tempVideo, videoData)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "", err)
+		respondWithError(w, http.StatusInternalServerError, "error copying video", err)
+		return
 	}
 	_, _ = tempVideo.Seek(0, io.SeekStart)
 
 	ar, err := getVideoAspectRatio(tempVideo.Name())
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "", err)
+		respondWithError(w, http.StatusInternalServerError, "error checking for aspect ration, defaulting to other", err)
+		return
 	}
 
 	var aspect string
@@ -174,13 +176,19 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 func getVideoAspectRatio(filePath string) (string, error) {
 	buf := &bytes.Buffer{}
+	errBuf := &bytes.Buffer{}
 	var err error
 
-	cmd := exec.Command("ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filePath)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filePath)
 	cmd.Stdout = buf
+	cmd.Stderr = errBuf
+
 	err = cmd.Run()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("ffprobe failed: %w, srderr: %s", err, errBuf.String())
 	}
 
 	var ff FFprobe
