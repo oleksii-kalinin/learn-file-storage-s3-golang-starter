@@ -87,7 +87,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	videoRandomBase := make([]byte, 32)
 	if _, err = rand.Read(videoRandomBase); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error generation video filename", err)
+		respondWithError(w, http.StatusInternalServerError, "Error generating video filename", err)
 		return
 	}
 
