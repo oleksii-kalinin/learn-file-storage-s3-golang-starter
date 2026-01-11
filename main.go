@@ -106,9 +106,9 @@ func main() {
 		log.Fatalf("Couldn't create assets directory: %v", err)
 	}
 
-	s3Config, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(cfg.s3Region))
+	s3Config, err := config.LoadDefaultConfig(context.Background(), config.WithRegion(cfg.s3Region))
 	if err != nil {
-		log.Fatalf("failed loading config, %v", err)
+		log.Fatalf("failed loading AWS config (region=%s): %v", cfg.s3Region, err)
 	}
 
 	cfg.s3Client = s3.NewFromConfig(s3Config)

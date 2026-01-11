@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 	"github.com/oleksii-kalinin/learn-file-storage-s3-golang-starter/internal/auth"
@@ -58,7 +59,11 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	videoMetaData, err := cfg.db.GetVideo(videoID)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error getting video", nil)
+		respondWithError(w, http.StatusInternalServerError, "Error getting video", err)
+		return
+	}
+	if videoMetaData.ID == uuid.Nil {
+		respondWithError(w, http.StatusNotFound, "video not found", nil)
 		return
 	}
 
@@ -73,10 +78,8 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	switch videoMediaType {
 	case "video/mp4":
 		ext = "mp4"
-	case "video/mkv":
-		ext = "mkv"
 	default:
-		respondWithError(w, http.StatusBadRequest, "Invalid Content-Type. Allowed: video/mp4, video/mkv", nil)
+		respondWithError(w, http.StatusBadRequest, "Invalid Content-Type. Allowed: video/mp4", nil)
 		return
 	}
 
@@ -89,10 +92,13 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	videoFileName := fmt.Sprintf("%s.%s", base64.RawURLEncoding.EncodeToString(videoRandomBase), ext)
 
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
-		Bucket:      &cfg.s3Bucket,
-		Key:         &videoFileName,
-		Body:        videoData,
-		ContentType: &videoMediaType,
+		Bucket:             &cfg.s3Bucket,
+		Key:                &videoFileName,
+		Body:               videoData,
+		ContentType:        &videoMediaType,
+		ContentLength:      &fh.Size,
+		ContentDisposition: aws.String("inline"),
+		CacheControl:       aws.String("public, max-age=31536000, immutable"),
 	})
 	if err != nil {
 		log.Println(err)
