@@ -91,11 +91,15 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "error copying video", err)
 		return
 	}
-	_, _ = tempVideo.Seek(0, io.SeekStart)
-
-	ar, err := getVideoAspectRatio(tempVideo.Name())
+	_, err = tempVideo.Seek(0, io.SeekStart)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "error checking for aspect ration, defaulting to other", err)
+		respondWithError(w, http.StatusInternalServerError, "error seeking temp file", err)
+		return
+	}
+
+	ar, err := getVideoAspectRatio(r.Context(), tempVideo.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "error checking for aspect ratio", err)
 		return
 	}
 
@@ -174,12 +178,12 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	respondWithJSON(w, http.StatusOK, videoMetaData)
 }
 
-func getVideoAspectRatio(filePath string) (string, error) {
+func getVideoAspectRatio(ctx context.Context, filePath string) (string, error) {
 	buf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
 	var err error
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filePath)
@@ -188,7 +192,7 @@ func getVideoAspectRatio(filePath string) (string, error) {
 
 	err = cmd.Run()
 	if err != nil {
-		return "", fmt.Errorf("ffprobe failed: %w, srderr: %s", err, errBuf.String())
+		return "", fmt.Errorf("ffprobe failed: %w, stderr: %s", err, errBuf.String())
 	}
 
 	var ff FFprobe
