@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -109,7 +108,7 @@ func main() {
 
 	s3Config, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(cfg.s3Region))
 	if err != nil {
-		panic(fmt.Sprintf("failed loading config, %v", err))
+		log.Fatalf("failed loading config, %v", err)
 	}
 
 	cfg.s3Client = s3.NewFromConfig(s3Config)

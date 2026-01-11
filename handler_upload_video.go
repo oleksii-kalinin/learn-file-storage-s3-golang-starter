@@ -4,10 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
@@ -16,6 +14,7 @@ import (
 
 func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request) {
 	const uploadLimit = 1 << 30
+	const maxMemory = 10 << 20
 	videoIDString := r.PathValue("videoID")
 	videoID, err := uuid.Parse(videoIDString)
 	if err != nil {
@@ -37,9 +36,22 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	log.Println("uploading video", videoID, "by user", userID)
 
+	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit)
+
+	if err := r.ParseMultipartForm(maxMemory); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid multipart form", err)
+		return
+	}
+
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
+
 	videoData, fh, err := r.FormFile("video")
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Error uploading thumbnail", err)
+		respondWithError(w, http.StatusBadRequest, "Error uploading video", err)
 		return
 	}
 	defer videoData.Close()
@@ -51,7 +63,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	if userID != videoMetaData.UserID {
-		respondWithError(w, http.StatusForbidden, "Denied", err)
+		respondWithError(w, http.StatusForbidden, "Denied", nil)
 		return
 	}
 
@@ -68,25 +80,9 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tempVideo, err := os.CreateTemp("", "tubely-upload.mp4")
-	defer os.Remove(tempVideo.Name())
-	defer tempVideo.Close()
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "error creating temp file", err)
-		return
-	}
-
-	_, err = io.Copy(tempVideo, videoData)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "error copying video to temp file", err)
-		return
-	}
-
-	_, _ = tempVideo.Seek(0, io.SeekStart)
-
 	videoRandomBase := make([]byte, 32)
 	if _, err = rand.Read(videoRandomBase); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error generation thumbnail filename", err)
+		respondWithError(w, http.StatusInternalServerError, "Error generation video filename", err)
 		return
 	}
 
@@ -95,7 +91,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &videoFileName,
-		Body:        tempVideo,
+		Body:        videoData,
 		ContentType: &videoMediaType,
 	})
 	if err != nil {
