@@ -254,14 +254,15 @@ func processVideoForFastStart(ctx context.Context, filePath string) (string, err
 
 	log.Printf("New video path: %s\n", newPath)
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-i", filePath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", newPath)
+	cmd := exec.CommandContext(timeoutCtx, "ffmpeg", "-i", filePath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", newPath)
 	cmd.Stderr = errBuf
 
 	err = cmd.Run()
 	if err != nil {
+		os.Remove(newPath)
 		return "", fmt.Errorf("ffmpeg failed: %w, stderr: %s", err, errBuf.String())
 	}
 	return newPath, nil
