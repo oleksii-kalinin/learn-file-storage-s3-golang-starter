@@ -16,7 +16,6 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 	"github.com/oleksii-kalinin/learn-file-storage-s3-golang-starter/internal/auth"
@@ -175,21 +174,18 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	newFileSize := info.Size()
 	_, err = cfg.s3Client.PutObject(uploadCtx, &s3.PutObjectInput{
-		Bucket:             &cfg.s3Bucket,
-		Key:                &videoFileName,
-		Body:               newPath,
-		ContentType:        &videoMediaType,
-		ContentLength:      &newFileSize,
-		ContentDisposition: aws.String("inline"),
-		CacheControl:       aws.String("public, max-age=31536000, immutable"),
-		// ACL:                "public-read",
+		Bucket:        &cfg.s3Bucket,
+		Key:           &videoFileName,
+		Body:          newPath,
+		ContentType:   &videoMediaType,
+		ContentLength: &newFileSize,
 	})
 	if err != nil {
 		log.Println(err)
 		respondWithError(w, http.StatusInternalServerError, "error upload to S3", err)
 		return
 	}
-	videoURL := fmt.Sprintf("%s,%s", cfg.s3Bucket, videoFileName)
+	videoURL := fmt.Sprintf("%s%s", cfg.s3CfDistribution, videoFileName)
 
 	videoMetaData.VideoURL = &videoURL
 
@@ -199,13 +195,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	video, err := cfg.dbVideoToSignedVideo(videoMetaData)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't generate presigned URL", err)
-		return
-	}
-
-	respondWithJSON(w, http.StatusOK, video)
+	respondWithJSON(w, http.StatusOK, videoMetaData.VideoURL)
 }
 
 func getVideoAspectRatio(ctx context.Context, filePath string) (string, error) {
