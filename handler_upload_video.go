@@ -166,8 +166,9 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	uploadCtx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 	info, err := newPath.Stat()
+	info, err := newPath.Stat()
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error getting file info", err)
+		respondWithError(w, http.StatusInternalServerError, "Error getting processed file info", err)
 		return
 	}
 	log.Printf("processed file size: %d\n", info.Size())
@@ -244,7 +245,6 @@ func getVideoAspectRatio(ctx context.Context, filePath string) (string, error) {
 }
 
 func processVideoForFastStart(ctx context.Context, filePath string) (string, error) {
-	buf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
 	var err error
 
@@ -254,11 +254,10 @@ func processVideoForFastStart(ctx context.Context, filePath string) (string, err
 
 	log.Printf("New video path: %s\n", newPath)
 
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", "-i", filePath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", newPath)
-	cmd.Stdout = buf
 	cmd.Stderr = errBuf
 
 	err = cmd.Run()
