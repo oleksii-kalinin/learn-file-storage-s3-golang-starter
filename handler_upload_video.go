@@ -166,7 +166,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	uploadCtx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 	info, err := newPath.Stat()
-	info, err := newPath.Stat()
+
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error getting processed file info", err)
 		return
