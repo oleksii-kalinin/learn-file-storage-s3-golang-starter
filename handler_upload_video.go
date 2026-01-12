@@ -137,7 +137,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Error opening optimized video", err)
 		return
 	}
-	_, _ = newPath.Seek(0, io.SeekStart)
+	defer os.Remove(optimized)
 	defer newPath.Close()
 
 	videoMetaData, err := cfg.db.GetVideo(videoID)
@@ -167,7 +167,8 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	defer cancel()
 	info, err := newPath.Stat()
 	if err != nil {
-		log.Println(err)
+		respondWithError(w, http.StatusInternalServerError, "Error getting file info", err)
+		return
 	}
 	log.Printf("processed file size: %d\n", info.Size())
 	newFileSize := info.Size()
