@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -142,4 +145,36 @@ func main() {
 
 	log.Printf("Serving on: http://localhost:%s/app/\n", port)
 	log.Fatal(srv.ListenAndServe())
+}
+
+func generatePresignedURL(s3client *s3.Client, bucket, key string, expiration time.Duration) (string, error) {
+	client := s3.NewPresignClient(s3client)
+	request, err := client.PresignGetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	}, s3.WithPresignExpires(expiration))
+
+	if err != nil {
+		return "", err
+	}
+	return request.URL, nil
+}
+
+func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
+	if video.VideoURL == nil {
+		return video, fmt.Errorf("video_url is nil")
+	}
+	existingURL := *video.VideoURL
+	parts := strings.Split(existingURL, ",")
+	if len(parts) != 2 {
+		return video, fmt.Errorf("invalid video_url format")
+	}
+	bucket := parts[0]
+	key := parts[1]
+	videoURL, err := generatePresignedURL(cfg.s3Client, bucket, key, 10*time.Minute)
+	if err != nil {
+		return video, err
+	}
+	video.VideoURL = &videoURL
+	return video, nil
 }

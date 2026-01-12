@@ -145,6 +145,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Error getting video", err)
 		return
 	}
+
 	if videoMetaData.ID == uuid.Nil {
 		respondWithError(w, http.StatusNotFound, "video not found", nil)
 		return
@@ -171,7 +172,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Error getting processed file info", err)
 		return
 	}
-	log.Printf("processed file size: %d\n", info.Size())
+
 	newFileSize := info.Size()
 	_, err = cfg.s3Client.PutObject(uploadCtx, &s3.PutObjectInput{
 		Bucket:             &cfg.s3Bucket,
@@ -188,16 +189,23 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "error upload to S3", err)
 		return
 	}
+	videoURL := fmt.Sprintf("%s,%s", cfg.s3Bucket, videoFileName)
 
-	videoURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, videoFileName)
 	videoMetaData.VideoURL = &videoURL
+
 	err = cfg.db.UpdateVideo(videoMetaData)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error updating DB", err)
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, videoMetaData)
+	video, err := cfg.dbVideoToSignedVideo(videoMetaData)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't generate presigned URL", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, video)
 }
 
 func getVideoAspectRatio(ctx context.Context, filePath string) (string, error) {
