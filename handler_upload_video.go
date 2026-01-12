@@ -179,7 +179,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		ContentLength:      &newFileSize,
 		ContentDisposition: aws.String("inline"),
 		CacheControl:       aws.String("public, max-age=31536000, immutable"),
-		ACL:                "public-read",
+		// ACL:                "public-read",
 	})
 	if err != nil {
 		log.Println(err)
